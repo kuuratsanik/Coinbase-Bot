@@ -21,15 +21,19 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import datetime
 
-from src.trading import catalog
-from src.trading import registry
+from src.trading import catalog, registry
 from src.trading.ai import execute_plan, format_plan, parse
+from src.trading.backtest import DCABacktester, synthetic_series
+from src.trading.engine import StateStore, run_due
+from src.trading.logging_config import configure_logging
 from src.trading.models import Order, OrderSide, OrderType
+from src.trading.strategy import Schedule, ScheduleLeg
 
 
 def _fmt_row(cols: list[str], widths: list[int]) -> str:
-    return "  ".join(c.ljust(w) for c, w in zip(cols, widths)).rstrip()
+    return "  ".join(c.ljust(w) for c, w in zip(cols, widths, strict=False)).rstrip()
 
 
 def _print_services(services: list[catalog.Service]) -> None:
@@ -47,8 +51,10 @@ def _print_services(services: list[catalog.Service]) -> None:
     for r in rows:
         print(_fmt_row(r, widths))
     st = catalog.stats()
-    print(f"\n{len(services)} shown | catalog: {st['total']} services, "
-          f"{st['categories']} categories, {st['with_adapter']} with a bundled adapter.")
+    print(
+        f"\n{len(services)} shown | catalog: {st['total']} services, "
+        f"{st['categories']} categories, {st['with_adapter']} with a bundled adapter."
+    )
 
 
 def cmd_services(args: argparse.Namespace) -> int:
@@ -82,8 +88,10 @@ def cmd_service(args: argparse.Namespace) -> int:
     print(f"  apis         : {', '.join(svc.apis)}")
     print(f"  auth         : {svc.auth}")
     print(f"  capabilities : {', '.join(svc.capabilities) or '-'}")
-    print(f"  adapter      : {svc.available_via}"
-          + ("" if not svc.adapter else f"  ({'ready' if runnable else 'needs: ' + str(reason)})"))
+    print(
+        f"  adapter      : {svc.available_via}"
+        + ("" if not svc.adapter else f"  ({'ready' if runnable else 'needs: ' + str(reason)})")
+    )
     if svc.sdk:
         print(f"  sdk          : {svc.sdk}")
     if svc.docs:
@@ -136,18 +144,25 @@ def cmd_quote(args: argparse.Namespace) -> int:
 def _place(args: argparse.Namespace, side: OrderSide) -> int:
     broker = _build_broker(args.provider)
     order = Order(
-        symbol=args.symbol, side=side, type=OrderType.MARKET,
-        quote_amount=args.amount, base_size=args.base_size,
+        symbol=args.symbol,
+        side=side,
+        type=OrderType.MARKET,
+        quote_amount=args.amount,
+        base_size=args.base_size,
     )
     if not getattr(broker, "paper", False) and not args.execute:
         quote = broker.get_quote(args.symbol)
-        print(f"DRY RUN (add --execute to place): {side.value} {args.symbol} "
-              f"for ${args.amount} at ~{quote.price:,.2f} on {args.provider}")
+        print(
+            f"DRY RUN (add --execute to place): {side.value} {args.symbol} "
+            f"for ${args.amount} at ~{quote.price:,.2f} on {args.provider}"
+        )
         return 0
     result = broker.place_order(order)
-    print(f"{result.status.value.upper()}: {result.side.value} {result.symbol} "
-          f"filled {result.filled_size} @ {result.avg_price:,.2f} "
-          f"(fee {result.fee}, notional ${result.notional:,.2f}) via {result.provider}")
+    print(
+        f"{result.status.value.upper()}: {result.side.value} {result.symbol} "
+        f"filled {result.filled_size} @ {result.avg_price:,.2f} "
+        f"(fee {result.fee}, notional ${result.notional:,.2f}) via {result.provider}"
+    )
     if result.raw.get("reason"):
         print(f"  reason: {result.raw['reason']}")
     if getattr(broker, "paper", False):
@@ -193,8 +208,90 @@ def cmd_ask(args: argparse.Namespace) -> int:
         if r.status.value == "simulated":
             print(f"  would {r.side.value} {r.symbol} for ${r.raw['quote_amount']:,.2f} on {r.provider}")
         else:
-            print(f"  {r.status.value.upper()} {r.side.value} {r.symbol} "
-                  f"filled {r.filled_size} @ {r.avg_price:,.2f} via {r.provider}")
+            print(
+                f"  {r.status.value.upper()} {r.side.value} {r.symbol} "
+                f"filled {r.filled_size} @ {r.avg_price:,.2f} via {r.provider}"
+            )
+    if is_paper and hasattr(broker, "get_balances"):
+        bals = ", ".join(f"{b.currency}={b.total}" for b in broker.get_balances())
+        print(f"  paper balances: {bals}")
+    return 0
+
+
+def cmd_backtest(args: argparse.Namespace) -> int:
+    series = synthetic_series(args.symbol, args.periods, args.start, args.drift)
+    result = DCABacktester(amount_per_period=args.amount, fee_rate=args.fee).run(args.symbol, series)
+    data = result.as_dict()
+    print(
+        f"DCA backtest: {data['symbol']} over {data['periods']} periods (${args.amount:,.2f} each, fee {args.fee:.3%})"
+    )
+    print(f"  invested    : ${data['invested']:,.2f}")
+    print(f"  fees        : ${data['fees']:,.2f}")
+    print(f"  units       : {data['units']}")
+    print(f"  average cost : {data['average_cost']:,.2f}")
+    print(f"  final price  : {data['final_price']:,.2f}")
+    print(f"  market value : ${data['market_value']:,.2f}")
+    sign = "+" if data["pnl"] >= 0 else ""
+    print(f"  pnl          : {sign}${data['pnl']:,.2f} ({sign}{data['pnl_pct']:.2f}%)")
+    return 0
+
+
+def _parse_leg(spec: str) -> ScheduleLeg:
+    if ":" not in spec:
+        raise SystemExit(f"invalid --leg '{spec}'; expected SYMBOL:AMOUNT (e.g. BTC-USD:50)")
+    symbol, _, amount = spec.partition(":")
+    symbol = symbol.strip()
+    try:
+        quote_amount = float(amount)
+    except ValueError:
+        raise SystemExit(f"invalid --leg '{spec}'; AMOUNT must be a number") from None
+    if not symbol or quote_amount <= 0:
+        raise SystemExit(f"invalid --leg '{spec}'; need a symbol and a positive amount")
+    return ScheduleLeg(symbol=symbol, quote_amount=quote_amount)
+
+
+def cmd_dca(args: argparse.Namespace) -> int:
+    configure_logging()
+    legs = [_parse_leg(spec) for spec in args.leg]
+
+    try:
+        broker = _build_broker(args.provider)
+    except (SystemExit, KeyError, RuntimeError, ValueError) as exc:
+        print(f"Note: {exc}\nFalling back to the offline paper venue.")
+        broker = registry.create_broker("paper")
+
+    is_paper = getattr(broker, "paper", False)
+    schedule = Schedule(
+        id="cli-dca",
+        provider_id=args.provider,
+        adapter=getattr(broker, "id", args.provider),
+        legs=legs,
+        frequency=args.frequency,
+        start=datetime.fromisoformat(args.start),
+        side=OrderSide.BUY,
+    )
+
+    store = StateStore(args.state) if args.state else None
+    dry_run = args.dry_run or (not is_paper and not args.execute)
+
+    executions = run_due(schedule, broker, store, dry_run=dry_run)
+    label = "DRY RUN (no orders placed)" if dry_run else "EXECUTED"
+    print(f"{label}: schedule '{schedule.id}' {schedule.frequency} on {args.provider}")
+    executed = skipped = 0
+    for ex in executions:
+        if ex.skipped:
+            skipped += 1
+            print(f"  {ex.cycle_key}  SKIPPED (already executed)")
+            continue
+        executed += 1
+        if not ex.results:
+            print(f"  {ex.cycle_key}  planned {len(schedule.legs)} leg(s) (dry run)")
+        for r in ex.results:
+            print(
+                f"  {ex.cycle_key}  {r.status.value.upper()} {r.side.value} {r.symbol} "
+                f"filled {r.filled_size} @ {r.avg_price:,.2f} via {r.provider}"
+            )
+    print(f"  -> {executed} cycle(s) processed, {skipped} skipped (idempotent)")
     if is_paper and hasattr(broker, "get_balances"):
         bals = ", ".join(f"{b.currency}={b.total}" for b in broker.get_balances())
         print(f"  paper balances: {bals}")
@@ -235,6 +332,31 @@ def build_parser() -> argparse.ArgumentParser:
     p_ask.add_argument("text")
     p_ask.add_argument("--execute", action="store_true", help="Place for real (non-paper venues)")
     p_ask.set_defaults(func=cmd_ask)
+
+    p_bt = sub.add_parser("backtest", help="Backtest a DCA strategy on a synthetic price series")
+    p_bt.add_argument("--symbol", default="BTC-USD")
+    p_bt.add_argument("--amount", type=float, required=True, help="Quote-currency spend per period")
+    p_bt.add_argument("--periods", type=int, default=52, help="Number of periods to simulate")
+    p_bt.add_argument("--start", type=float, default=100.0, help="Starting price for the synthetic series")
+    p_bt.add_argument("--drift", type=float, default=0.01, help="Per-period drift (e.g. 0.01 = +1%%)")
+    p_bt.add_argument("--fee", type=float, default=0.006, help="Taker fee rate (e.g. 0.006 = 0.6%%)")
+    p_bt.set_defaults(func=cmd_backtest)
+
+    p_dca = sub.add_parser("dca", help="Run due cycles of a scheduled DCA (idempotent with --state)")
+    p_dca.add_argument("--provider", default="paper")
+    p_dca.add_argument(
+        "--leg",
+        action="append",
+        required=True,
+        metavar="SYMBOL:AMOUNT",
+        help="A leg to buy each cycle, e.g. BTC-USD:50 (repeatable)",
+    )
+    p_dca.add_argument("--frequency", choices=["daily", "weekly", "biweekly", "monthly"], default="weekly")
+    p_dca.add_argument("--start", required=True, help="ISO date/datetime the schedule begins")
+    p_dca.add_argument("--state", default=None, help="Path to a JSON idempotency ledger")
+    p_dca.add_argument("--dry-run", action="store_true", help="Plan only; place no orders")
+    p_dca.add_argument("--execute", action="store_true", help="Place for real (non-paper venues)")
+    p_dca.set_defaults(func=cmd_dca)
 
     return parser
 

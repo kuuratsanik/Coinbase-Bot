@@ -73,3 +73,64 @@ class TestTradeCLI:
     def test_buy_catalog_only_provider_errors(self, capsys):
         with pytest.raises(SystemExit):
             trade.main(["buy", "--provider", "uniswap", "--symbol", "ETH-USD", "--amount", "10"])
+
+    def test_backtest_runs(self, capsys):
+        code, out = run(capsys, ["backtest", "--symbol", "BTC-USD", "--amount", "100", "--periods", "12"])
+        assert code == 0
+        assert "DCA backtest" in out
+        assert "invested" in out
+        assert "pnl" in out
+
+    def test_dca_paper_executes_then_idempotent(self, capsys, tmp_path):
+        state = str(tmp_path / "state.json")
+        argv = [
+            "dca",
+            "--provider",
+            "paper",
+            "--leg",
+            "BTC-USD:50",
+            "--leg",
+            "ETH-USD:50",
+            "--frequency",
+            "weekly",
+            "--start",
+            "2026-01-01",
+            "--state",
+            state,
+        ]
+
+        code, out = run(capsys, argv)
+        assert code == 0
+        assert "FILLED" in out
+        assert "0 skipped" in out
+
+        # Second run with the same state file: everything is skipped (idempotent).
+        code, out = run(capsys, argv)
+        assert code == 0
+        assert "SKIPPED" in out
+        assert "0 cycle(s) processed" in out
+
+    def test_dca_dry_run_places_nothing(self, capsys):
+        code, out = run(
+            capsys,
+            [
+                "dca",
+                "--provider",
+                "paper",
+                "--leg",
+                "BTC-USD:50",
+                "--frequency",
+                "monthly",
+                "--start",
+                "2026-01-01",
+                "--dry-run",
+            ],
+        )
+        assert code == 0
+        assert "DRY RUN" in out
+
+    def test_dca_bad_leg_errors(self, capsys):
+        with pytest.raises(SystemExit):
+            trade.main(
+                ["dca", "--provider", "paper", "--leg", "BTCUSD", "--frequency", "weekly", "--start", "2026-01-01"]
+            )

@@ -1,7 +1,7 @@
 import pytest
 
 from src.trading import registry
-from src.trading.models import Order, OrderSide, OrderStatus, OrderType
+from src.trading.models import Order, OrderSide, OrderStatus
 from src.trading.paper import PaperBroker, PaperMarketData
 
 

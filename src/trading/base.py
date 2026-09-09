@@ -8,7 +8,7 @@ is a paper engine, a ccxt-backed exchange, or a native SDK.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Sequence
+from collections.abc import Sequence
 
 from src.trading.models import Balance, Order, OrderResult, Quote
 
@@ -24,12 +24,10 @@ class Broker(ABC):
     paper: bool = False
 
     @abstractmethod
-    def get_quote(self, symbol: str) -> Quote:
-        ...
+    def get_quote(self, symbol: str) -> Quote: ...
 
     @abstractmethod
-    def place_order(self, order: Order) -> OrderResult:
-        ...
+    def place_order(self, order: Order) -> OrderResult: ...
 
     def get_balances(self) -> Sequence[Balance]:
         return []
@@ -42,8 +40,7 @@ class MarketData(ABC):
     name: str = "Market data"
 
     @abstractmethod
-    def get_price(self, symbol: str) -> Quote:
-        ...
+    def get_price(self, symbol: str) -> Quote: ...
 
 
 class Notifier(ABC):
@@ -53,5 +50,4 @@ class Notifier(ABC):
     name: str = "Notifier"
 
     @abstractmethod
-    def notify(self, subject: str, message: str) -> bool:
-        ...
+    def notify(self, subject: str, message: str) -> bool: ...

@@ -10,7 +10,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Optional
+from typing import Any
 
 
 class AssetClass(str, Enum):
@@ -58,9 +58,9 @@ class Order:
     symbol: str
     side: OrderSide = OrderSide.BUY
     type: OrderType = OrderType.MARKET
-    quote_amount: Optional[float] = None
-    base_size: Optional[float] = None
-    limit_price: Optional[float] = None
+    quote_amount: float | None = None
+    base_size: float | None = None
+    limit_price: float | None = None
     client_order_id: str = field(default_factory=new_client_order_id)
 
     def validate(self) -> None:

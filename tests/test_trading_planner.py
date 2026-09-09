@@ -1,5 +1,3 @@
-import pytest
-
 from src.trading.ai import execute_plan, format_plan, parse
 from src.trading.models import OrderSide, OrderStatus
 from src.trading.paper import PaperBroker, PaperMarketData

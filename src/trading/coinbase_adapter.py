@@ -57,9 +57,12 @@ class CoinbaseAdvancedBroker(Broker):
         )
         success = bool(getattr(result, "success", False) or (isinstance(result, dict) and result.get("success")))
         return OrderResult(
-            order_id=order.client_order_id, symbol=order.symbol, side=order.side,
+            order_id=order.client_order_id,
+            symbol=order.symbol,
+            side=order.side,
             status=OrderStatus.ACCEPTED if success else OrderStatus.REJECTED,
-            provider=self.id, client_order_id=order.client_order_id,
+            provider=self.id,
+            client_order_id=order.client_order_id,
             raw=result if isinstance(result, dict) else {"success": success},
         )
 

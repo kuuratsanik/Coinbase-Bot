@@ -23,7 +23,7 @@ class YAMLInputCollector(InputCollector):
         :return: None
         """
 
-        with open(yaml_filepath, "r") as yaml_file:
+        with open(yaml_filepath) as yaml_file:
             self.yaml_file = yaml.load(yaml_file, Loader=yaml.BaseLoader)
 
         if verbose:

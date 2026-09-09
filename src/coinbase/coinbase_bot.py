@@ -115,7 +115,7 @@ class CoinbaseProHandler:
         response = requests.get(self.api_url + "coinbase-accounts", auth=self.auth)
 
         if response.status_code != 200:
-            raise RuntimeError(f"ERROR: are_sufficient_funds_available() reported a failure")
+            raise RuntimeError("ERROR: are_sufficient_funds_available() reported a failure")
 
         coinbase_wallets = response.json()
 

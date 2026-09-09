@@ -106,6 +106,119 @@ If you set up your email credentials correctly, you will be sent a confirmation 
 market order has been placed and filled. If you have 2FA enabled for your email, this may not work.
 
 
+<h2> Multi-provider toolkit (pick a service, or ask AI) </h2>
+
+The original bot targeted the Coinbase Pro API, which was retired in 2023. The
+project now also ships a pluggable, provider-agnostic toolkit so you can pick any
+service from a built-in catalog — or just describe what you want in plain English
+and let the planner do it.
+
+The core (service catalog, offline paper-trading engine, natural-language planner,
+and CLI) uses only the Python standard library, so it runs with no credentials and
+no extra installs. Real venues are optional adapters, loaded lazily:
+
+    pip install -r requirements-optional.txt   # ccxt (~100 exchanges) + Coinbase Advanced Trade
+
+Usage via the `trade.py` CLI:
+
+    python trade.py services                      # browse the whole catalog
+    python trade.py services --category crypto_exchange
+    python trade.py services --search options     # free-text search
+    python trade.py service coinbase              # details for one service
+    python trade.py providers                     # which adapters are runnable now
+    python trade.py quote --provider paper BTC-USD
+    python trade.py buy --provider paper --symbol BTC-USD --amount 100
+    python trade.py ask "DCA $50 of BTC and ETH weekly on coinbase"
+
+The `paper` venue is the default and moves no real funds. Real venues place orders
+only with `--execute` and valid credentials; an ambiguous natural-language request
+is always shown as a reviewable plan and previewed on paper first.
+
+Architecture (`src/trading/`):
+
+- `models.py` / `base.py` — shared order/quote/balance types and adapter interfaces.
+- `catalog.py` — the queryable inventory of exchanges, brokers, data, and notifiers.
+- `registry.py` — maps a catalog entry to a concrete adapter; probes availability.
+- `paper.py` — deterministic offline simulation engine (the always-available default).
+- `ccxt_adapter.py` / `coinbase_adapter.py` — optional real-venue adapters.
+- `notifiers.py` — pluggable console / webhook (Slack/Discord/Telegram) channels.
+- `ai/planner.py` — plain-English → structured, reviewable trading plan.
+- `backtest.py` — deterministic DCA backtester (preview a strategy before funding it).
+- `strategy.py` / `engine.py` — recurring-purchase schedule model + idempotent runner.
+- `logging_config.py` — structured (text or JSON) logging for a money-moving audit trail.
+- `alpaca_adapter.py` — stdlib Alpaca adapter (equities/ETFs/options/crypto, paper default).
+
+
+<h2> Backtesting a DCA strategy </h2>
+
+Preview how a dollar-cost-averaging plan would have performed on a reproducible
+synthetic price series — no credentials, no network:
+
+    python trade.py backtest --amount 100 --periods 52
+    python trade.py backtest --symbol ETH-USD --amount 50 --periods 26 --drift 0.02 --fee 0.006
+
+It reports the amount invested, fees paid, units accumulated, average cost, final
+market value, and PnL (absolute and percent).
+
+
+<h2> Scheduled, idempotent DCA execution </h2>
+
+Turn a schedule into safe, restartable execution. `trade.py dca` runs every *due*
+cycle from `--start` up to now. Pass `--state` to record executed cycles in a JSON
+ledger so re-running (from cron, a retry, or a crash-restart) never double-buys:
+
+    python trade.py dca --provider paper \
+        --leg BTC-USD:50 --leg ETH-USD:50 \
+        --frequency weekly --start 2026-01-01 \
+        --state /tmp/cbdca_state.json
+
+Run it again with the same `--state` and every already-executed cycle is reported
+`SKIPPED` (idempotent). Use `--dry-run` to plan without placing orders. On non-paper
+venues, orders are only sent with `--execute`.
+
+
+<h2> Structured logging </h2>
+
+The engine emits structured logs. Choose the format and level via environment
+variables (JSON is first-class for audit/ingestion):
+
+    CBDCA_LOG_FORMAT=json CBDCA_LOG_LEVEL=INFO python trade.py dca --provider paper --leg BTC-USD:50 --start 2026-01-01
+
+`CBDCA_LOG_FORMAT` is `text` (default) or `json`; `CBDCA_LOG_LEVEL` defaults to `INFO`.
+
+
+<h2> Alpaca adapter </h2>
+
+A standard-library (`urllib`) Alpaca adapter covers equities, ETFs, options, and
+crypto. Paper trading is the default (no real funds); pass `paper=False` for live.
+Credentials come from the environment:
+
+    ALPACA_API_KEY_ID / ALPACA_API_SECRET_KEY   (or the native APCA_API_KEY_ID / APCA_API_SECRET_KEY)
+
+Its HTTP transport is injectable, so it is fully unit-tested offline. See
+`python trade.py service alpaca` for details.
+
+
+<h2> Continuous integration </h2>
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push and pull request
+across Python 3.11/3.12/3.13: `ruff check`, `ruff format --check`, `mypy` (scoped
+to `src/trading` + `trade.py`), and the full `pytest` suite. Linting/formatting are
+enforced locally too via pre-commit (`ruff` + `ruff-format`):
+
+    pre-commit install
+    pre-commit run --all-files
+
+
+<h2> Docker </h2>
+
+A minimal `uv`-based image is provided:
+
+    docker build -t coinbase-bot .
+    docker run --rm coinbase-bot                       # default: `python trade.py services`
+    docker run --rm coinbase-bot python trade.py backtest --amount 100 --periods 52
+
+
 <h2> Disclaimer </h2>
 Any stock or ticker mentioned is not to be taken as financial advice. 
 

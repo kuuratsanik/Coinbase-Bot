@@ -1,0 +1,9 @@
+# Optional extras that unlock real trading venues in the pluggable toolkit.
+# The core (catalog, paper engine, planner, CLI) needs none of these.
+#
+#   pip install -r requirements-optional.txt
+#
+# ccxt: one adapter -> ~100 crypto exchanges (Kraken, Binance, Bybit, OKX, ...).
+ccxt>=4.4.0
+# Native Coinbase Advanced Trade SDK (successor to the retired Coinbase Pro API).
+coinbase-advanced-py>=1.8.0

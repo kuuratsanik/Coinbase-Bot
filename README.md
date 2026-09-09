@@ -106,6 +106,45 @@ If you set up your email credentials correctly, you will be sent a confirmation 
 market order has been placed and filled. If you have 2FA enabled for your email, this may not work.
 
 
+<h2> Multi-provider toolkit (pick a service, or ask AI) </h2>
+
+The original bot targeted the Coinbase Pro API, which was retired in 2023. The
+project now also ships a pluggable, provider-agnostic toolkit so you can pick any
+service from a built-in catalog — or just describe what you want in plain English
+and let the planner do it.
+
+The core (service catalog, offline paper-trading engine, natural-language planner,
+and CLI) uses only the Python standard library, so it runs with no credentials and
+no extra installs. Real venues are optional adapters, loaded lazily:
+
+    pip install -r requirements-optional.txt   # ccxt (~100 exchanges) + Coinbase Advanced Trade
+
+Usage via the `trade.py` CLI:
+
+    python trade.py services                      # browse the whole catalog
+    python trade.py services --category crypto_exchange
+    python trade.py services --search options     # free-text search
+    python trade.py service coinbase              # details for one service
+    python trade.py providers                     # which adapters are runnable now
+    python trade.py quote --provider paper BTC-USD
+    python trade.py buy --provider paper --symbol BTC-USD --amount 100
+    python trade.py ask "DCA $50 of BTC and ETH weekly on coinbase"
+
+The `paper` venue is the default and moves no real funds. Real venues place orders
+only with `--execute` and valid credentials; an ambiguous natural-language request
+is always shown as a reviewable plan and previewed on paper first.
+
+Architecture (`src/trading/`):
+
+- `models.py` / `base.py` — shared order/quote/balance types and adapter interfaces.
+- `catalog.py` — the queryable inventory of exchanges, brokers, data, and notifiers.
+- `registry.py` — maps a catalog entry to a concrete adapter; probes availability.
+- `paper.py` — deterministic offline simulation engine (the always-available default).
+- `ccxt_adapter.py` / `coinbase_adapter.py` — optional real-venue adapters.
+- `notifiers.py` — pluggable console / webhook (Slack/Discord/Telegram) channels.
+- `ai/planner.py` — plain-English → structured, reviewable trading plan.
+
+
 <h2> Disclaimer </h2>
 Any stock or ticker mentioned is not to be taken as financial advice. 
 

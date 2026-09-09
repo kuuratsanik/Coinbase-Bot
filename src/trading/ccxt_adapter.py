@@ -10,8 +10,6 @@ real order or read private balances).
 
 from __future__ import annotations
 
-from typing import Optional
-
 from src.trading.base import Broker
 from src.trading.models import Order, OrderResult, OrderSide, OrderStatus, OrderType, Quote
 from src.trading.registry import _MissingDependency, register_broker
@@ -21,9 +19,7 @@ def _import_ccxt():
     try:
         import ccxt  # type: ignore
     except ImportError as exc:  # pragma: no cover - exercised only without ccxt
-        raise _MissingDependency(
-            "ccxt is not installed. Run `pip install ccxt` to enable this venue."
-        ) from exc
+        raise _MissingDependency("ccxt is not installed. Run `pip install ccxt` to enable this venue.") from exc
     return ccxt
 
 
@@ -46,7 +42,7 @@ class CcxtBroker(Broker):
         ccxt = _import_ccxt()
         if not hasattr(ccxt, exchange_id):
             raise ValueError(f"ccxt has no exchange '{exchange_id}'")
-        params = {"enableRateLimit": True}
+        params: dict[str, object] = {"enableRateLimit": True}
         if api_key:
             params["apiKey"] = api_key
         if secret:
@@ -72,19 +68,28 @@ class CcxtBroker(Broker):
         else:
             amount = order.base_size
         result = self._client.create_order(
-            symbol=order.symbol, type=otype, side=side, amount=amount,
-            price=order.limit_price, params=params,
+            symbol=order.symbol,
+            type=otype,
+            side=side,
+            amount=amount,
+            price=order.limit_price,
+            params=params,
         )
         return OrderResult(
-            order_id=str(result.get("id", "")), symbol=order.symbol, side=order.side,
-            status=OrderStatus.ACCEPTED, filled_size=float(result.get("filled") or 0.0),
-            avg_price=float(result.get("average") or 0.0), provider=self.exchange_id,
-            client_order_id=order.client_order_id, raw=result,
+            order_id=str(result.get("id", "")),
+            symbol=order.symbol,
+            side=order.side,
+            status=OrderStatus.ACCEPTED,
+            filled_size=float(result.get("filled") or 0.0),
+            avg_price=float(result.get("average") or 0.0),
+            provider=self.exchange_id,
+            client_order_id=order.client_order_id,
+            raw=result,
         )
 
 
 @register_broker("ccxt")
-def _make_ccxt(probe: bool = False, exchange_id: Optional[str] = None, **config) -> CcxtBroker:
+def _make_ccxt(probe: bool = False, exchange_id: str | None = None, **config) -> CcxtBroker:
     # Probe only checks that the optional dependency imports.
     _import_ccxt()
     if probe:

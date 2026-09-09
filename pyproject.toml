@@ -4,6 +4,37 @@ line-length = 120
 [tool.isort]
 line_length = 120
 
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",   # line length is enforced by the formatter
+    "B008",   # allow argparse/dataclass-style calls in defaults
+    "SIM105", # contextlib.suppress is not always clearer than try/except
+    "UP042",  # str+Enum is intentional: values serialize as plain strings
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011", "SIM"]
+# Legacy modules predate this toolkit; keep their behavior untouched.
+"place_order.py" = ["SIM108"]
+"src/coinbase/*" = ["UP031", "B006"]
+"src/orders/*" = ["SIM103", "B905"]
+
+[tool.mypy]
+python_version = "3.11"
+files = ["src/trading", "trade.py"]
+mypy_path = "."
+explicit_package_bases = true
+namespace_packages = true
+ignore_missing_imports = true
+warn_unused_ignores = false
+check_untyped_defs = true
+no_implicit_optional = true
+
 [tool.pytest.ini_options]
 minversion = "7.3.1"
 addopts = "-vv"

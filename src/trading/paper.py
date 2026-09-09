@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 from datetime import date
-from typing import Optional
 
 from src.trading.base import Broker, MarketData
 from src.trading.models import (
@@ -64,7 +63,7 @@ class PaperBroker(Broker):
         cash: float = 100_000.0,
         quote_currency: str = "USD",
         fee_rate: float = 0.006,
-        market_data: Optional[PaperMarketData] = None,
+        market_data: PaperMarketData | None = None,
         probe: bool = False,
     ):
         self.quote_currency = quote_currency
@@ -87,19 +86,27 @@ class PaperBroker(Broker):
         return self._buy(order)
 
     def _buy(self, order: Order) -> OrderResult:
-        price = order.limit_price if order.type is OrderType.LIMIT and order.limit_price else self.get_quote(order.symbol).price
+        price = (
+            order.limit_price
+            if order.type is OrderType.LIMIT and order.limit_price
+            else self.get_quote(order.symbol).price
+        )
         if order.quote_amount is not None:
             spend = float(order.quote_amount)
             size = spend / price
         else:
+            assert order.base_size is not None  # guaranteed by Order.validate()
             size = float(order.base_size)
             spend = size * price
         fee = round(spend * self.fee_rate, 2)
         total = spend + fee
         if total > self._cash + 1e-9:
             return OrderResult(
-                order_id="", symbol=order.symbol.upper(), side=order.side,
-                status=OrderStatus.REJECTED, provider=self.id,
+                order_id="",
+                symbol=order.symbol.upper(),
+                side=order.side,
+                status=OrderStatus.REJECTED,
+                provider=self.id,
                 client_order_id=order.client_order_id,
                 raw={"reason": "insufficient paper funds", "needed": round(total, 2), "cash": round(self._cash, 2)},
             )
@@ -107,9 +114,15 @@ class PaperBroker(Broker):
         base = self._base_asset(order.symbol)
         self._positions[base] = self._positions.get(base, 0.0) + size
         return OrderResult(
-            order_id=order.client_order_id, symbol=order.symbol.upper(), side=order.side,
-            status=OrderStatus.FILLED, filled_size=round(size, 10), avg_price=round(price, 2),
-            fee=fee, provider=self.id, client_order_id=order.client_order_id,
+            order_id=order.client_order_id,
+            symbol=order.symbol.upper(),
+            side=order.side,
+            status=OrderStatus.FILLED,
+            filled_size=round(size, 10),
+            avg_price=round(price, 2),
+            fee=fee,
+            provider=self.id,
+            client_order_id=order.client_order_id,
             raw={"spend": round(spend, 2), "cash_after": round(self._cash, 2)},
         )
 
@@ -117,11 +130,19 @@ class PaperBroker(Broker):
         price = self.get_quote(order.symbol).price
         base = self._base_asset(order.symbol)
         held = self._positions.get(base, 0.0)
-        size = float(order.base_size) if order.base_size is not None else float(order.quote_amount) / price
+        if order.base_size is not None:
+            size = float(order.base_size)
+        else:
+            assert order.quote_amount is not None  # guaranteed by Order.validate()
+            size = float(order.quote_amount) / price
         if size > held + 1e-9:
             return OrderResult(
-                order_id="", symbol=order.symbol.upper(), side=order.side,
-                status=OrderStatus.REJECTED, provider=self.id, client_order_id=order.client_order_id,
+                order_id="",
+                symbol=order.symbol.upper(),
+                side=order.side,
+                status=OrderStatus.REJECTED,
+                provider=self.id,
+                client_order_id=order.client_order_id,
                 raw={"reason": "insufficient position", "held": held, "requested": size},
             )
         proceeds = size * price
@@ -129,9 +150,15 @@ class PaperBroker(Broker):
         self._positions[base] = held - size
         self._cash += proceeds - fee
         return OrderResult(
-            order_id=order.client_order_id, symbol=order.symbol.upper(), side=order.side,
-            status=OrderStatus.FILLED, filled_size=round(size, 10), avg_price=round(price, 2),
-            fee=fee, provider=self.id, client_order_id=order.client_order_id,
+            order_id=order.client_order_id,
+            symbol=order.symbol.upper(),
+            side=order.side,
+            status=OrderStatus.FILLED,
+            filled_size=round(size, 10),
+            avg_price=round(price, 2),
+            fee=fee,
+            provider=self.id,
+            client_order_id=order.client_order_id,
             raw={"proceeds": round(proceeds, 2), "cash_after": round(self._cash, 2)},
         )
 

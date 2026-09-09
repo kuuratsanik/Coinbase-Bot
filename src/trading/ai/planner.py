@@ -16,17 +16,44 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
-from typing import Optional
 
 from src.trading import catalog
 from src.trading.models import Order, OrderResult, OrderSide
 
 # A pragmatic lexicon of common crypto tickers for symbol extraction.
 KNOWN_TICKERS = {
-    "BTC", "ETH", "SOL", "ADA", "XRP", "DOGE", "LINK", "LTC", "BCH", "DOT",
-    "MATIC", "AVAX", "UNI", "ATOM", "XLM", "ALGO", "FIL", "ICP", "APT", "ARB",
-    "OP", "SUI", "SHIB", "TRX", "NEAR", "AAVE", "MKR", "SAND", "MANA", "GRT",
-    "USDC", "USDT",
+    "BTC",
+    "ETH",
+    "SOL",
+    "ADA",
+    "XRP",
+    "DOGE",
+    "LINK",
+    "LTC",
+    "BCH",
+    "DOT",
+    "MATIC",
+    "AVAX",
+    "UNI",
+    "ATOM",
+    "XLM",
+    "ALGO",
+    "FIL",
+    "ICP",
+    "APT",
+    "ARB",
+    "OP",
+    "SUI",
+    "SHIB",
+    "TRX",
+    "NEAR",
+    "AAVE",
+    "MKR",
+    "SAND",
+    "MANA",
+    "GRT",
+    "USDC",
+    "USDT",
 }
 
 _FREQUENCIES = {
@@ -59,7 +86,7 @@ class Plan:
     adapter: str = "paper"
     side: OrderSide = OrderSide.BUY
     legs: list[PlanLeg] = field(default_factory=list)
-    frequency: Optional[str] = None
+    frequency: str | None = None
     quote_currency: str = "USD"
     warnings: list[str] = field(default_factory=list)
 
@@ -90,21 +117,20 @@ def _resolve_provider(text: str) -> tuple[str, str, list[str]]:
             name_matches.append(svc)
     # An exact id match is the most specific; fall back to a name match.
     candidates = id_matches or name_matches
-    best: Optional[catalog.Service] = None
+    best: catalog.Service | None = None
     if candidates:
         best = min(candidates, key=lambda s: len(s.id))
     if best is None:
         return "paper", "paper", warnings
     if best.adapter is None:
         warnings.append(
-            f"'{best.name}' is in the catalog but has no bundled adapter yet; "
-            f"falling back to the paper simulator."
+            f"'{best.name}' is in the catalog but has no bundled adapter yet; falling back to the paper simulator."
         )
         return best.id, "paper", warnings
     return best.id, best.adapter, warnings
 
 
-def _extract_frequency(text: str) -> Optional[str]:
+def _extract_frequency(text: str) -> str | None:
     lowered = text.lower()
     if "every" in lowered or "recurring" in lowered or "dca" in lowered:
         for word, freq in _FREQUENCIES.items():
@@ -154,7 +180,7 @@ def _extract_legs(text: str) -> tuple[list[PlanLeg], list[str]]:
         legs = [PlanLeg(symbol=f"{t}-USD", quote_amount=amt) for t in tickers]
     elif amounts and len(amounts) == len(tickers):
         # "$50 BTC and $100 ETH" -> pair positionally.
-        legs = [PlanLeg(symbol=f"{t}-USD", quote_amount=a) for t, a in zip(tickers, amounts)]
+        legs = [PlanLeg(symbol=f"{t}-USD", quote_amount=a) for t, a in zip(tickers, amounts, strict=True)]
     elif pairs:
         for t in tickers:
             if t in pairs:
@@ -189,9 +215,7 @@ def parse(text: str) -> Plan:
         warnings=provider_warnings + leg_warnings,
     )
     if not plan.is_actionable:
-        plan.warnings.append(
-            "Could not identify any tradable asset. Mention a ticker like BTC or ETH."
-        )
+        plan.warnings.append("Could not identify any tradable asset. Mention a ticker like BTC or ETH.")
     return plan
 
 
@@ -199,8 +223,7 @@ def format_plan(plan: Plan) -> str:
     lines = [
         f"Request : {plan.raw_text}",
         f"Provider: {plan.provider_id} (adapter: {plan.adapter})",
-        f"Action  : {plan.side.value.upper()}"
-        + (f", recurring {plan.frequency}" if plan.frequency else ", one-time"),
+        f"Action  : {plan.side.value.upper()}" + (f", recurring {plan.frequency}" if plan.frequency else ", one-time"),
     ]
     if plan.legs:
         lines.append("Orders  :")
@@ -228,8 +251,11 @@ def execute_plan(plan: Plan, broker=None, dry_run: bool = True) -> list[OrderRes
         for leg in plan.legs:
             results.append(
                 OrderResult(
-                    order_id="", symbol=leg.symbol, side=plan.side,
-                    status=OrderStatus.SIMULATED, provider=plan.provider_id,
+                    order_id="",
+                    symbol=leg.symbol,
+                    side=plan.side,
+                    status=OrderStatus.SIMULATED,
+                    provider=plan.provider_id,
                     raw={"quote_amount": leg.quote_amount, "dry_run": True},
                 )
             )
@@ -237,7 +263,9 @@ def execute_plan(plan: Plan, broker=None, dry_run: bool = True) -> list[OrderRes
 
     for leg in plan.legs:
         order = Order(
-            symbol=leg.symbol, side=plan.side, type=OrderType.MARKET,
+            symbol=leg.symbol,
+            side=plan.side,
+            type=OrderType.MARKET,
             quote_amount=leg.quote_amount,
         )
         results.append(broker.place_order(order))
@@ -248,7 +276,7 @@ def _llm_enabled() -> bool:
     return os.getenv("CBDCA_LLM") == "1" and bool(os.getenv("OPENAI_API_KEY"))
 
 
-def _parse_with_llm(text: str) -> Optional[Plan]:  # pragma: no cover - requires network + key
+def _parse_with_llm(text: str) -> Plan | None:  # pragma: no cover - requires network + key
     """Optional LLM-backed parse. Best-effort; returns None to fall back."""
 
     try:
@@ -281,8 +309,13 @@ def _parse_with_llm(text: str) -> Optional[Plan]:  # pragma: no cover - requires
             if leg.get("symbol") and leg.get("quote_amount")
         ]
         return Plan(
-            raw_text=text, provider_id=provider_id, adapter=adapter, side=side,
-            legs=legs, frequency=data.get("frequency"), warnings=warnings + ["parsed via LLM"],
+            raw_text=text,
+            provider_id=provider_id,
+            adapter=adapter,
+            side=side,
+            legs=legs,
+            frequency=data.get("frequency"),
+            warnings=warnings + ["parsed via LLM"],
         )
     except Exception:
         return None

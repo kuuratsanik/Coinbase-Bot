@@ -9,7 +9,7 @@ extra install or credentials.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from src.trading.base import Broker, Notifier
 
@@ -38,17 +38,13 @@ def register_notifier(adapter_id: str) -> Callable[[NotifierFactory], NotifierFa
 
 def create_broker(adapter_id: str, **config) -> Broker:
     if adapter_id not in _BROKER_FACTORIES:
-        raise KeyError(
-            f"No broker adapter '{adapter_id}'. Registered: {sorted(_BROKER_FACTORIES)}"
-        )
+        raise KeyError(f"No broker adapter '{adapter_id}'. Registered: {sorted(_BROKER_FACTORIES)}")
     return _BROKER_FACTORIES[adapter_id](**config)
 
 
 def create_notifier(adapter_id: str, **config) -> Notifier:
     if adapter_id not in _NOTIFIER_FACTORIES:
-        raise KeyError(
-            f"No notifier adapter '{adapter_id}'. Registered: {sorted(_NOTIFIER_FACTORIES)}"
-        )
+        raise KeyError(f"No notifier adapter '{adapter_id}'. Registered: {sorted(_NOTIFIER_FACTORIES)}")
     return _NOTIFIER_FACTORIES[adapter_id](**config)
 
 
@@ -60,7 +56,7 @@ def registered_notifier_adapters() -> list[str]:
     return sorted(_NOTIFIER_FACTORIES)
 
 
-def broker_availability(adapter_id: str) -> tuple[bool, Optional[str]]:
+def broker_availability(adapter_id: str) -> tuple[bool, str | None]:
     """Return (is_runnable_now, reason_if_not).
 
     Runnable means the adapter and any optional dependency import cleanly with no
@@ -87,7 +83,8 @@ class _MissingDependency(RuntimeError):
 
 # Import adapter modules for their registration side effects. Kept at the bottom
 # so the registry API above is fully defined first.
-from src.trading import paper as _paper  # noqa: E402,F401
-from src.trading import notifiers as _notifiers  # noqa: E402,F401
+from src.trading import alpaca_adapter as _alpaca  # noqa: E402,F401
 from src.trading import ccxt_adapter as _ccxt  # noqa: E402,F401
 from src.trading import coinbase_adapter as _coinbase  # noqa: E402,F401
+from src.trading import notifiers as _notifiers  # noqa: E402,F401
+from src.trading import paper as _paper  # noqa: E402,F401

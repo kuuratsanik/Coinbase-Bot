@@ -159,7 +159,7 @@ class TestYAMLInputCollector:
             (YAML_INVALID_ORDERS7, None, True, "Datetime string '2023-01-01 07:00 AM' is not valid!"),
             (
                 YAML_VALID_ORDERS1,
-                {"start_date": "2025-01-01", "start_time": "12:00 AM", "frequency": "daily", "orders": {"BTC": "1000"}},
+                {"start_date": "2099-01-01", "start_time": "12:00 AM", "frequency": "daily", "orders": {"BTC": "1000"}},
                 False,
                 None,
             ),

@@ -38,6 +38,10 @@ no_implicit_optional = true
 [tool.pytest.ini_options]
 minversion = "7.3.1"
 addopts = "-vv"
+# Put the repo root on sys.path so `from src...` imports resolve regardless of
+# how pytest is launched. `python -m pytest` adds the CWD implicitly, but the
+# bare `pytest` console script used in CI does not, which broke collection.
+pythonpath = ["."]
 python_files = ["test_*.py"]
 python_classes = ["Test"]
 python_functions = ["test"]
